@@ -3,25 +3,26 @@
 import { useState, useEffect } from 'react';
 import { get, post } from '@/lib/utils/fetcher';
 
+export interface InvoiceItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  price: number;
+}
+
 export interface Transaction {
   id: string;
-  referenceId: string;
   buyerId: string;
   sellerId: string;
-  productId: string;
-  amount: number;
-  status: 'pending' | 'successful' | 'failed' | 'cancelled';
-  valueConfirmed: boolean;
+  reference: string;
+  items: InvoiceItem[];
+  shippingFee: number;
+  platformFee: number;
+  price: number;
+  confirmed: boolean;
   withdrawn: boolean;
-  createdAt: string;
-  product?: {
-    title: string;
-    image?: string;
-  };
-  seller?: {
-    username: string;
-    fullName: string;
-  };
+  date: any;
+  createdAt: any;
 }
 
 interface UseTransactionsResult {
@@ -30,7 +31,7 @@ interface UseTransactionsResult {
   error: string | null;
 }
 
-export function useTransactions(): UseTransactionsResult {
+export function useTransactions(action: 'purchase' | 'sale'): UseTransactionsResult {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export function useTransactions(): UseTransactionsResult {
       try {
         setLoading(true);
         setError(null);
-        const data = await get<Transaction[]>('/api/transactions');
+        const data = await get<Transaction[]>(`/api/transactions?action=${action}`);
         setTransactions(data || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
@@ -50,12 +51,12 @@ export function useTransactions(): UseTransactionsResult {
     };
 
     fetchTransactions();
-  }, []);
+  }, [action]);
 
   return { transactions, loading, error };
 }
 
-export function useTransaction(referenceId: string) {
+export function useTransaction(transactionId: string, action: 'purchase' | 'sale') {
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export function useTransaction(referenceId: string) {
         setLoading(true);
         setError(null);
         const data = await get<Transaction>(
-          `/api/transactions/${referenceId}`
+          `/api/transactions?action=${action}&id=${transactionId}`
         );
         setTransaction(data);
       } catch (err) {
@@ -77,22 +78,22 @@ export function useTransaction(referenceId: string) {
     };
 
     fetchTransaction();
-  }, [referenceId]);
+  }, [transactionId, action]);
 
-  const confirmValue = async () => {
+  const confirmReceived = async () => {
     try {
-      await post('/api/reference/confirm-value', { referenceId });
+      await post('/api/reference/confirm-value', { referenceId: transaction?.reference });
       const data = await get<Transaction>(
-        `/api/transactions/${referenceId}`
+        `/api/transactions?action=${action}&id=${transactionId}`
       );
       setTransaction(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to confirm value');
+      setError(err instanceof Error ? err.message : 'Failed to confirm receipt');
       throw err;
     }
   };
 
-  return { transaction, loading, error, confirmValue };
+  return { transaction, loading, error, confirmReceived };
 }
 
 export function useCreatePayment() {

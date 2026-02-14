@@ -7,20 +7,22 @@ import { auth } from '@/lib/firebase'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Loader2, ArrowRight } from 'lucide-react'
-import { BuyerNav } from '@/components/nav/buyer-nav'
+import { CreatorNav } from '@/components/nav/creator-nav'
 
 interface Transaction {
   id: string
   reference: string
-  sellerId: string
+  buyerId: string
   items: Array<{ productName: string; quantity: number; price: number }>
   shippingFee: number
   platformFee: number
   price: number
+  confirmed: boolean
+  withdrawn: boolean
   createdAt: any
 }
 
-export function TransactionsClient() {
+export function CreatorTransactionsClient() {
   const router = useRouter()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,7 +52,7 @@ export function TransactionsClient() {
 
         const token = await user.getIdToken()
 
-        const response = await fetch('/api/transactions?action=purchase', {
+        const response = await fetch('/api/transactions?action=sale', {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -92,11 +94,11 @@ export function TransactionsClient() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
-        <BuyerNav />
+        <CreatorNav />
         <div className="flex items-center justify-center min-h-[calc(100vh-60px)]">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-muted-foreground">Loading transactions...</p>
+            <p className="text-muted-foreground">Loading sales...</p>
           </div>
         </div>
       </div>
@@ -105,12 +107,12 @@ export function TransactionsClient() {
 
   return (
     <div className="min-h-screen bg-background">
-      <BuyerNav />
+      <CreatorNav />
       <div className="max-w-4xl mx-auto p-6">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">My Transactions</h1>
+          <h1 className="text-4xl font-bold mb-2">My Sales</h1>
           <p className="text-muted-foreground">
-            Click any transaction to pay or manage it
+            Track all your sales and manage confirmations
           </p>
         </div>
 
@@ -122,8 +124,10 @@ export function TransactionsClient() {
 
         {transactions.length === 0 ? (
           <Card className="p-8 text-center">
-            <p className="text-muted-foreground mb-4">No transactions yet</p>
-            <Button onClick={() => router.push('/')}>Browse Products</Button>
+            <p className="text-muted-foreground mb-4">No sales yet</p>
+            <Button onClick={() => router.push('/creator/invoice')}>
+              Create First Invoice
+            </Button>
           </Card>
         ) : (
           <div className="grid gap-4">
@@ -131,7 +135,7 @@ export function TransactionsClient() {
               <Card
                 key={transaction.id}
                 className="p-6 hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => router.push(`/transactions/${transaction.id}`)}
+                onClick={() => router.push(`/creator/transactions/${transaction.id}`)}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -142,6 +146,16 @@ export function TransactionsClient() {
                       <span className="text-xs bg-muted px-2 py-1 rounded">
                         {formatDate(transaction.createdAt)}
                       </span>
+                      {transaction.confirmed && (
+                        <span className="text-xs bg-green-500/20 text-green-700 px-2 py-1 rounded">
+                          Confirmed
+                        </span>
+                      )}
+                      {transaction.withdrawn && (
+                        <span className="text-xs bg-blue-500/20 text-blue-700 px-2 py-1 rounded">
+                          Withdrawn
+                        </span>
+                      )}
                     </div>
 
                     <div className="space-y-2 mb-4 text-sm text-muted-foreground">
@@ -174,7 +188,7 @@ export function TransactionsClient() {
                         <p className="font-semibold">₦{transaction.platformFee.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Grand Total</p>
+                        <p className="text-xs text-muted-foreground">Total</p>
                         <p className="font-semibold text-lg text-primary">
                           ₦{transaction.price.toLocaleString()}
                         </p>

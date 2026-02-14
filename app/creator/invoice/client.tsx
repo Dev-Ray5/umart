@@ -54,7 +54,8 @@ export function CreatorInvoiceClient() {
 
       const token = await user.getIdToken(true) // Force refresh
 
-      const response = await fetch('/api/payment/create', {
+      // Step 1: Create payment and get reference ID
+      const paymentResponse = await fetch('/api/payment/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,16 +76,56 @@ export function CreatorInvoiceClient() {
         }),
       })
 
-      const result = await response.json()
+      const paymentResult = await paymentResponse.json()
 
-      if (!result.success) {
-        setError(result.error || 'Failed to create invoice')
+      if (!paymentResult.success) {
+        setError(paymentResult.error || 'Failed to create invoice')
         return
+      }
+
+      const { refId, grandPrice } = paymentResult.data
+
+      // Step 2: Calculate item total and platform fee
+      const itemsTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+      const platformFee = itemsTotal * 0.05 + 100
+
+      // Step 3: Create transaction record
+      try {
+        const transactionResponse = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            buyerId: customer.uid,
+            items: items.map((item) => ({
+              productId: item.productId,
+              productName: item.productName,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            shippingFee,
+            platformFee,
+            price: grandPrice,
+            reference: refId,
+          }),
+        })
+
+        const transactionResult = await transactionResponse.json()
+
+        if (!transactionResult.success) {
+          console.warn('Warning: Failed to create transaction record:', transactionResult.error)
+          // Continue anyway - payment was successful
+        }
+      } catch (err) {
+        console.warn('Warning: Failed to create transaction record:', err)
+        // Continue anyway - payment was successful
       }
 
       // Redirect to success page
       router.push(
-        `/creator/invoice/success?refId=${result.data.refId}&grandPrice=${result.data.grandPrice}`
+        `/creator/invoice/success?refId=${refId}&grandPrice=${grandPrice}`
       )
     } catch (err: any) {
       setError(err.message || 'Failed to create invoice')

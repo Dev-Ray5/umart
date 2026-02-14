@@ -7,12 +7,11 @@ import { auth } from '@/lib/firebase'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Loader2, ChevronLeft, Check } from 'lucide-react'
-import { BuyerNav } from '@/components/nav/buyer-nav'
+import { CreatorNav } from '@/components/nav/creator-nav'
 
 interface TransactionDetail {
   id: string
   reference: string
-  sellerId: string
   buyerId: string
   items: Array<{ productName: string; quantity: number; price: number }>
   shippingFee: number
@@ -23,17 +22,17 @@ interface TransactionDetail {
   createdAt: any
 }
 
-export function TransactionDetailClient() {
+export function CreatorTransactionDetailClient() {
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
 
   const [transaction, setTransaction] = useState<TransactionDetail | null>(null)
-  const [paymentStatus, setPaymentStatus] = useState<string>('pending')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [confirmingValue, setConfirmingValue] = useState(false)
+  const [confirmingReceived, setConfirmingReceived] = useState(false)
+  const [requestingWithdrawal, setRequestingWithdrawal] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -59,7 +58,7 @@ export function TransactionDetailClient() {
         const token = await user.getIdToken()
 
         // Fetch transaction details
-        const response = await fetch(`/api/transactions?action=purchase&id=${id}`, {
+        const response = await fetch(`/api/transactions?action=sale&id=${id}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -73,21 +72,6 @@ export function TransactionDetailClient() {
         }
 
         setTransaction(result.data)
-
-        // Verify payment status from reference
-        const verifyResponse = await fetch(
-          `/api/payment/verify?refId=${result.data.reference}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        )
-
-        const verifyResult = await verifyResponse.json()
-        if (verifyResult.success) {
-          setPaymentStatus(verifyResult.data.status)
-        }
       } catch (err: any) {
         console.error('Error fetching transaction:', err)
         setError(err.message || 'Failed to load transaction')
@@ -99,11 +83,11 @@ export function TransactionDetailClient() {
     fetchTransactionDetails()
   }, [id, isAuthenticated])
 
-  const handleConfirmValueReceived = async () => {
+  const handleConfirmReceived = async () => {
     if (!transaction) return
 
     try {
-      setConfirmingValue(true)
+      setConfirmingReceived(true)
       const user = auth.currentUser
       if (!user) return
 
@@ -127,56 +111,51 @@ export function TransactionDetailClient() {
           prev ? { ...prev, confirmed: true } : null
         )
       } else {
-        setError(result.error || 'Failed to confirm value received')
+        setError(result.error || 'Failed to confirm received')
       }
     } catch (err: any) {
-      console.error('Error confirming value:', err)
-      setError(err.message || 'Failed to confirm value received')
+      console.error('Error confirming received:', err)
+      setError(err.message || 'Failed to confirm received')
     } finally {
-      setConfirmingValue(false)
+      setConfirmingReceived(false)
     }
   }
 
-  const handlePayNow = () => {
+  const handleRequestWithdrawal = async () => {
     if (!transaction) return
-    // Load Paystack inline JS
-    const script = document.createElement('script')
-    script.src = 'https://js.paystack.co/v1/inline.js'
-    document.body.appendChild(script)
 
-    script.onload = () => {
-        // @ts-ignore
-      if (typeof window.PaystackPop !== 'undefined') {
-        // @ts-ignore
-        const handler = window.PaystackPop.setup({
-          key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || '',
-          email: auth.currentUser?.email || '',
-          amount: Math.round(transaction.price * 100), // Paystack uses cents
-          ref: transaction.reference,
-          onClose: () => {
-            console.log('Payment window closed')
-          },
-          onSuccess: (response: any) => {
-            console.log('Payment successful:', response)
-            // Update payment status to success
-            updatePaymentStatus()
-          },
-        })
-        handler.openIframe()
-      }
-    }
-  }
-
-  const updatePaymentStatus = async () => {
     try {
+      setRequestingWithdrawal(true)
       const user = auth.currentUser
-      if (!user || !transaction) return
+      if (!user) return
 
-      // In a real scenario, you would verify the payment with Paystack API
-      // For now, we'll update the status in Firestore
-      setPaymentStatus('success')
-    } catch (err) {
-      console.error('Error updating payment status:', err)
+      const token = await user.getIdToken()
+
+      const response = await fetch('/api/reference/withdraw', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          referenceId: transaction.reference,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setTransaction((prev) =>
+          prev ? { ...prev, withdrawn: true } : null
+        )
+      } else {
+        setError(result.error || 'Failed to request withdrawal')
+      }
+    } catch (err: any) {
+      console.error('Error requesting withdrawal:', err)
+      setError(err.message || 'Failed to request withdrawal')
+    } finally {
+      setRequestingWithdrawal(false)
     }
   }
 
@@ -200,7 +179,7 @@ export function TransactionDetailClient() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
-        <BuyerNav />
+        <CreatorNav />
         <div className="flex items-center justify-center min-h-[calc(100vh-60px)]">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -214,7 +193,7 @@ export function TransactionDetailClient() {
   if (!transaction) {
     return (
       <div className="min-h-screen bg-background">
-        <BuyerNav />
+        <CreatorNav />
         <div className="max-w-2xl mx-auto p-6">
           <Button variant="ghost" onClick={() => router.back()} className="mb-6">
             <ChevronLeft className="w-4 h-4 mr-2" />
@@ -222,8 +201,8 @@ export function TransactionDetailClient() {
           </Button>
           <Card className="p-8 text-center">
             <p className="text-destructive mb-4">{error || 'Transaction not found'}</p>
-            <Button onClick={() => router.push('/transactions')}>
-              View All Transactions
+            <Button onClick={() => router.push('/creator/transactions')}>
+              View All Sales
             </Button>
           </Card>
         </div>
@@ -233,7 +212,7 @@ export function TransactionDetailClient() {
 
   return (
     <div className="min-h-screen bg-background">
-      <BuyerNav />
+      <CreatorNav />
       <div className="max-w-2xl mx-auto p-6">
         <Button variant="ghost" onClick={() => router.back()} className="mb-6">
           <ChevronLeft className="w-4 h-4 mr-2" />
@@ -241,7 +220,7 @@ export function TransactionDetailClient() {
         </Button>
 
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">Transaction Details</h1>
+          <h1 className="text-3xl font-bold mb-2">Sale Details</h1>
           <p className="text-muted-foreground">{transaction.reference}</p>
         </div>
 
@@ -251,63 +230,69 @@ export function TransactionDetailClient() {
           </div>
         )}
 
-        {/* Payment Status */}
+        {/* Status Section */}
         <Card className="p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Payment Status</h2>
-            <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-              paymentStatus === 'success'
-                ? 'bg-green-500/20 text-green-700'
-                : paymentStatus === 'pending'
-                ? 'bg-yellow-500/20 text-yellow-700'
-                : 'bg-red-500/20 text-red-700'
-            }`}>
-              {paymentStatus.charAt(0).toUpperCase() + paymentStatus.slice(1)}
+          <div className="space-y-3">
+            {/* Confirmed Status */}
+            <div className="flex items-center justify-between pb-4 border-b border-border">
+              <div>
+                <h3 className="font-semibold mb-1">Customer Received Value</h3>
+                <p className="text-sm text-muted-foreground">
+                  Customer confirms they received the products
+                </p>
+              </div>
+              {transaction.confirmed ? (
+                <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-5 h-5 text-green-600" />
+                    <span className="text-green-700 font-medium text-sm">Confirmed</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-3">
+                  <span className="text-yellow-700 font-medium text-sm">Pending</span>
+                </div>
+              )}
+            </div>
+
+            {/* Withdrawal Status */}
+            <div className="flex items-center justify-between pt-4">
+              <div>
+                <h3 className="font-semibold mb-1">Withdrawal</h3>
+                <p className="text-sm text-muted-foreground">
+                  Request to withdraw payment to your account
+                </p>
+              </div>
+              {transaction.withdrawn ? (
+                <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-5 h-5 text-blue-600" />
+                    <span className="text-blue-700 font-medium text-sm">Requested</span>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  onClick={handleRequestWithdrawal}
+                  disabled={requestingWithdrawal || !transaction.confirmed}
+                  size="sm"
+                >
+                  {requestingWithdrawal ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Requesting...
+                    </>
+                  ) : (
+                    'Request Withdrawal'
+                  )}
+                </Button>
+              )}
             </div>
           </div>
-
-          {paymentStatus === 'pending' && (
-            <Button onClick={handlePayNow} className="w-full" size="lg">
-              Pay Now
-            </Button>
-          )}
-
-          {paymentStatus === 'success' && !transaction.confirmed && (
-            <Button
-              onClick={handleConfirmValueReceived}
-              disabled={confirmingValue}
-              className="w-full"
-              size="lg"
-            >
-              {confirmingValue ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Confirming...
-                </>
-              ) : (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Received Value
-                </>
-              )}
-            </Button>
-          )}
-
-          {transaction.confirmed && (
-            <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-4">
-              <div className="flex items-center gap-2">
-                <Check className="w-5 h-5 text-green-600" />
-                <span className="text-green-700 font-medium">
-                  Value received confirmed
-                </span>
-              </div>
-            </div>
-          )}
         </Card>
 
         {/* Items */}
         <Card className="p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Items</h2>
+          <h2 className="text-xl font-semibold mb-4">Items Sold</h2>
           <div className="space-y-4">
             {transaction.items.map((item, idx) => (
               <div key={idx} className="flex justify-between items-center pb-4 border-b border-border last:border-b-0">
@@ -338,7 +323,7 @@ export function TransactionDetailClient() {
               <span className="font-medium">₦{transaction.platformFee.toLocaleString()}</span>
             </div>
             <div className="border-t border-border pt-3 flex justify-between">
-              <span className="font-semibold">Grand Total</span>
+              <span className="font-semibold">Total Sale Amount</span>
               <span className="font-bold text-lg text-primary">
                 ₦{transaction.price.toLocaleString()}
               </span>
@@ -347,16 +332,20 @@ export function TransactionDetailClient() {
         </Card>
 
         {/* Transaction Info */}
-        <Card className="p-6">
+        <Card className="p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Transaction Information</h2>
           <div className="space-y-3 text-sm">
             <div>
-              <p className="text-muted-foreground">Created Date</p>
+              <p className="text-muted-foreground">Sale Date</p>
               <p className="font-medium">{formatDate(transaction.createdAt)}</p>
             </div>
             <div>
               <p className="text-muted-foreground">Reference ID</p>
               <p className="font-mono text-xs break-all">{transaction.reference}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Buyer ID</p>
+              <p className="font-mono text-xs break-all">{transaction.buyerId}</p>
             </div>
           </div>
         </Card>
