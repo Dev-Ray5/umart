@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get('location') || ''
     const maxAgeYears = searchParams.get('maxAge') ? parseInt(searchParams.get('maxAge')!) : Infinity
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 20
+    const isSuggestion = limit <= 10 // Treat as suggestion if limit is small
 
     // Build query
     let productsQuery = db.collection('products').where('status', '==', 'active')
@@ -88,6 +89,23 @@ export async function GET(request: NextRequest) {
         return dateB - dateA
       })
       .slice(0, limit)
+
+    // For suggestion requests, return simplified data
+    if (isSuggestion) {
+      const simplifiedData = products.map((product) => ({
+        id: product.id,
+        title: product.title,
+        brand: product.brand,
+        price: product.price,
+        images: product.images || [],
+      }))
+
+      return NextResponse.json({
+        success: true,
+        data: simplifiedData,
+        total: products.length,
+      })
+    }
 
     return NextResponse.json({
       success: true,
