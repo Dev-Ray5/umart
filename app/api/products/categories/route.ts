@@ -1,21 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { initializeApp, getApps, cert } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
-
-// Initialize Firebase Admin SDK
-let db: any
-
-if (!getApps().length) {
-  try {
-    initializeApp({
-      credential: cert(JSON.parse(process.env.FIREBASE_ADMIN_SDK_KEY || '{}')),
-    })
-  } catch {
-    console.error('Firebase Admin initialization failed')
-  }
-}
-
-db = getFirestore()
+import { adminDb } from '@/lib/firebase-admin'
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,7 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build base query for products in this category
-    let productsQuery = db
+    let productsQuery = adminDb
       .collection('products')
       .where('status', '==', 'active')
       .where('category', '==', category)

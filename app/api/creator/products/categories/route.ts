@@ -1,30 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
-
-// Initialize Firebase Admin
-const firebaseConfig = {
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-  privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-}
-
-const app = getApps().length > 0 ? getApp() : initializeApp({
-  credential: cert(firebaseConfig as any),
-})
-
-const db = getFirestore(app)
+import { adminDb } from '@/lib/firebase-admin'
 
 // GET: Fetch all product categories (public endpoint)
 export async function GET(req: NextRequest) {
   try {
-    const categoriesSnapshot = await db.collection('productCategories').get()
+    console.log('[v0] Fetching categories from Firestore')
+    const categoriesSnapshot = await adminDb.collection('productCategories').get()
 
-    const categories = categoriesSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }))
+    const categories = categoriesSnapshot.docs.map((doc) => {
+      const data = doc.data()
+      console.log('[v0] Category document:', { id: doc.id, ...data })
+      return {
+        id: doc.id,
+        ...data,
+      }
+    })
 
+    console.log('[v0] Categories fetched successfully:', categories)
     return NextResponse.json(
       {
         success: true,
@@ -33,7 +25,7 @@ export async function GET(req: NextRequest) {
       { status: 200 }
     )
   } catch (error: any) {
-    console.error('Error fetching categories:', error)
+    console.error('[v0] Error fetching categories:', error)
     return NextResponse.json(
       {
         success: false,
@@ -42,7 +34,6 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
-}
 
 // POST: Add new product category (admin only - not exposed to creators)
 export async function POST(req: NextRequest) {
